@@ -1,2 +1,2 @@
-# acr122u_mifareClassic_RemoveNDEF
-If you have NDEF formatted your mifareclassic 1k using my previous script, you can now use this much cleaner script to uninitialize the tag again (no more ndef).
+# acr122u_mifareClassic_NDEFUnformatFormat
+Script that allows you to NDEF-format your mifare classic 1k using your acr122u or you can unformat an ndef-formatted tag
