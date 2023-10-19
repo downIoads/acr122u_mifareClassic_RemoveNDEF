@@ -11,7 +11,7 @@ typedef struct _SCARD_DUAL_HANDLE {
 
 
 const BYTE sectorBlocks[16] = { 0x03, 0x07, 0x0B, 0x0F, 0x13, 0x17, 0x1B, 0x1F,
-				0x23, 0x27, 0x2B, 0x2F, 0x33, 0x37, 0x3B, 0x3F };
+								0x23, 0x27, 0x2B, 0x2F, 0x33, 0x37, 0x3B, 0x3F };
 
 // KEYS
 // uninitialized default keys
@@ -22,7 +22,7 @@ const BYTE KEY_B_DEFAULT[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 const BYTE KEY_A_NDEF_SECTOR0[6] = { 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5 };
 const BYTE KEY_B_NDEF_SECTOR0[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 
-const BYTE KEY_A_NDEF_SECTOR115[6] = { 0xD3, 0xF7, 0xD3, 0xF7, 0xD3, 0xF7 };
+const BYTE KEY_A_NDEF_SECTOR115[6] = { 0xD3, 0xF7, 0xD3, 0xF7, 0xD3, 0xF7 };	// 64 33 66 37 64 33 66 37 64 33 66 37
 const BYTE KEY_B_NDEF_SECTOR115[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 
 // ACCESS BITS
@@ -102,7 +102,7 @@ void CloseReader(PSCARD_DUAL_HANDLE pHandle)
 }
 
 // what, were, how, prove you are allowed
-int WriteToNDEFformattedTag(const BYTE* msg, BYTE block, bool useKeyA, const BYTE* key) {
+int WriteToTag(const BYTE* msg, BYTE block, bool useKeyA, const BYTE* key) {
 
 	// 1. Load authentication key
 	const BYTE APDU_LoadDefaultKey[5 + 6] = { 0xff, 0x82, 0x00, 0x00, 0x06};	// base command 5 bytes + 16 byte key
@@ -185,6 +185,65 @@ int WriteToNDEFformattedTag(const BYTE* msg, BYTE block, bool useKeyA, const BYT
 	return 0;
 }
 
+int NDEFFormatTag() {
+	// messages
+	const BYTE msgNDEFSector115[16] =	{ 0xD3, 0xF7, 0xD3, 0xF7, 0xD3, 0xF7,     0x7F, 0x07, 0x88, 0x40,     0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+	const BYTE msgNDEFSector0[16] =		{ 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5,     0x78, 0x77, 0x88, 0xC1,     0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+	const BYTE msgNDEFBlock1[16] =		{ 0x14, 0x01, 0x03, 0xE1, 0x03, 0xE1, 0x03, 0xE1, 0x03, 0xE1, 0x03, 0xE1, 0x03, 0xE1, 0x03, 0xE1 };
+	const BYTE msgNDEFBlock2[16] =		{ 0x03, 0xE1, 0x03, 0xE1, 0x03, 0xE1, 0x03, 0xE1, 0x03, 0xE1, 0x03, 0xE1, 0x03, 0xE1, 0x03, 0xE1 };
+	const BYTE msgNDEFBlock4[16] =		{ 0x03, 0x00, 0xFE, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+	const BYTE msgEmpty[16] =			{ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+
+
+	// 1. reset all non-sector blocks that are not in sector 0 to all zeroes (using key A)
+	int status = -1;
+	for (BYTE i = 0x01; i < 0x40; ++i) {
+		// skip sector blocks
+		if (isByteInSectorBlocks(i, sectorBlocks)) {
+			continue;
+		}
+		status = WriteToTag(i != 0x04 ? msgEmpty : msgNDEFBlock4, i, true, KEY_A_DEFAULT);	// msg, block, useKeyA?, key
+		if (status != 0) {
+			printf("error occured. aborting..");
+			return -1;
+		}
+	}
+	
+	// 2. write blocks 0x01 and 0x02
+	status = WriteToTag(msgNDEFBlock1, 0x01, true, KEY_A_DEFAULT);
+	if (status != 0) {
+		printf("error occured. aborting..");
+		return -1;
+	}
+	status = WriteToTag(msgNDEFBlock2, 0x02, true, KEY_A_DEFAULT);
+	if (status != 0) {
+		printf("error occured. aborting..");
+		return -1;
+	}
+
+	// 3. write new sector trailers that are not in sector 0
+	for (BYTE i = 0x07; i < 0x40; ++i) {
+		if (isByteInSectorBlocks(i, sectorBlocks)) {
+			status = WriteToTag(msgNDEFSector115, i, true, KEY_A_DEFAULT);
+			if (status != 0) {
+				printf("error occured. aborting..");
+				return -1;
+			}
+		}
+
+	}
+
+	// 4. write sector trailer of sector 0 (block 0x03)
+	status = WriteToTag(msgNDEFSector0, 0x03, true, KEY_A_DEFAULT);	// msg, block, useKeyA?, key
+	if (status != 0) {
+		printf("error occured. aborting..");
+		return -1;
+	}
+
+
+	return status;
+}
+
 
 int ResetTagToUninitialized() {
 	
@@ -205,7 +264,7 @@ int ResetTagToUninitialized() {
 	// as authentication key always pass one of the pre-defined keys
 
 
-	//int status = WriteToNDEFformattedTag(msg, block, false, KEY_B_DEFAULT);
+	//int status = WriteToTag(msg, block, false, KEY_B_DEFAULT);
 
 	// 1. reset all non-sector blocks that are not in sector 0 to all zeroes (using key A)
 	for (BYTE i = 0x04; i < 0x40; ++i) {
@@ -213,7 +272,7 @@ int ResetTagToUninitialized() {
 		if (isByteInSectorBlocks(i, sectorBlocks)) {
 			continue;
 		}
-		status = WriteToNDEFformattedTag(msgEmpty, i, true, KEY_A_NDEF_SECTOR115);	// msg, block, useKeyA?, key
+		status = WriteToTag(msgEmpty, i, true, KEY_A_NDEF_SECTOR115);	// msg, block, useKeyA?, key
 		if (status != 0) {
 			printf("error occured. aborting..");
 			return -1;
@@ -221,12 +280,12 @@ int ResetTagToUninitialized() {
 	}
 	
 	// 2. reset blocks 0x01 and 0x02 to all zeroes (using key B)
-	status = WriteToNDEFformattedTag(msgEmpty, 0x01, false, KEY_B_NDEF_SECTOR0);	// msg, block, useKeyA?, key
+	status = WriteToTag(msgEmpty, 0x01, false, KEY_B_NDEF_SECTOR0);	// msg, block, useKeyA?, key
 	if (status != 0) {
 		printf("error occured. aborting..");
 		return -1;
 	}
-	status = WriteToNDEFformattedTag(msgEmpty, 0x02, false, KEY_B_NDEF_SECTOR0);	// msg, block, useKeyA?, key
+	status = WriteToTag(msgEmpty, 0x02, false, KEY_B_NDEF_SECTOR0);	// msg, block, useKeyA?, key
 	if (status != 0) {
 		printf("error occured. aborting..");
 		return -1;
@@ -236,7 +295,7 @@ int ResetTagToUninitialized() {
 	// 3. reset all trailer sectors that are not trailer sector 0 (using key B)
 	for (BYTE i = 0x07; i < 0x40; ++i) {
 		if (isByteInSectorBlocks(i, sectorBlocks)) {
-			status = WriteToNDEFformattedTag(msgSectorUninit, i, false, KEY_B_NDEF_SECTOR115);	// msg, block, useKeyA?, key
+			status = WriteToTag(msgSectorUninit, i, false, KEY_B_NDEF_SECTOR115);	// msg, block, useKeyA?, key
 			if (status != 0) {
 				printf("error occured. aborting..");
 				return -1;
@@ -246,7 +305,7 @@ int ResetTagToUninitialized() {
 	}
 
 	// 4. reset trailer sector 0 (block 0x03) (using key B)
-	status = WriteToNDEFformattedTag(msgSectorUninit, 0x03, false, KEY_B_NDEF_SECTOR0);	// msg, block, useKeyA?, key
+	status = WriteToTag(msgSectorUninit, 0x03, false, KEY_B_NDEF_SECTOR0);	// msg, block, useKeyA?, key
 	if (status != 0) {
 		printf("error occured. aborting..");
 		return -1;
@@ -257,10 +316,21 @@ int ResetTagToUninitialized() {
 }
 
 int main() {
+	// Unintialize tag
+	/*
 	int status = ResetTagToUninitialized();
 	if (status == 0) {
-		printf("SUCCESS. Tag is now uninitialized.");
+		printf("\nSUCCESS. Tag is now uninitialized.");
 	}
+	*/
+
+	// NDEF-format tag
+	// /*
+	int status = NDEFFormatTag();
+	if (status == 0) {
+		printf("\nSUCCESS. Tag is now NDEF-formatted.");
+	}
+	// */
 
 	return status;
 }
