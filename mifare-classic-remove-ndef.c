@@ -11,7 +11,7 @@ typedef struct _SCARD_DUAL_HANDLE {
 
 
 const BYTE sectorBlocks[16] = { 0x03, 0x07, 0x0B, 0x0F, 0x13, 0x17, 0x1B, 0x1F,
-				0x23, 0x27, 0x2B, 0x2F, 0x33, 0x37, 0x3B, 0x3F };
+								0x23, 0x27, 0x2B, 0x2F, 0x33, 0x37, 0x3B, 0x3F };
 
 // KEYS
 // uninitialized default keys
@@ -316,21 +316,55 @@ int ResetTagToUninitialized() {
 }
 
 int main() {
+	// Note: program has to be started only after an nfc chip is already near the reader!
+	int status = 1;
+
+	status = disableBuzzer();
+
 	// Unintialize tag
-	/*
-	int status = ResetTagToUninitialized();
+	//	 /*
+	status = ResetTagToUninitialized();
 	if (status == 0) {
 		printf("\nSUCCESS. Tag is now uninitialized.");
 	}
-	*/
+	//	*/
 
 	// NDEF-format tag
-	// /*
-	int status = NDEFFormatTag();
+		/*
+	status = NDEFFormatTag();
 	if (status == 0) {
 		printf("\nSUCCESS. Tag is now NDEF-formatted.");
 	}
-	// */
+		*/
 
 	return status;
+}
+
+// disableBuzzer disables the annoying beep sound of ACR122U
+int disableBuzzer() {
+	// define APDU to disable buzzer of acr122u (https://stackoverflow.com/a/41550221)
+	BYTE escapeCode[] = { 0xFF, 0x00, 0x52, 0x00, 0x00 };
+	DWORD cbRecvLength = 7;
+
+	// connect to reader
+	SCARD_DUAL_HANDLE dualHandle;
+	if (OpenReader(L"ACS ACR122 0", &dualHandle)) {
+		// send apdu
+		int result = SCardControl(dualHandle.hCard, SCARD_CTL_CODE(3500), escapeCode, sizeof(escapeCode), NULL, 0, &cbRecvLength);
+
+		if (result != SCARD_S_SUCCESS) {
+			printf("Failed to send APDU to disable buzzer. Error code: %d\n", result);
+			return 1;
+		}
+		else {
+			printf("Successfully disabled buzzer.\n"); // buzzer will be disabled until you disconnect the reader
+			CloseReader(&dualHandle);
+			return 0;
+		}
+	}
+	else {
+		printf("Failed to connect to the reader");
+		return 1;
+	}
+
 }
